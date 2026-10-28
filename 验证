@@ -1,0 +1,24 @@
+yaml
+
+# 手动发一条测试消息到微信（验证推送通道）
+name: test-push
+on:
+  workflow_dispatch:            # 只在 GitHub 页面上手动触发
+permissions:
+  contents: write
+jobs:
+  testpush:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+      - name: 发测试消息
+        env:
+          PYTHONUTF8: "1"
+          PUSH_CHANNEL: serverchan
+          PUSH_WEBHOOK_URL: ${{ secrets.PUSH_WEBHOOK_URL }}
+        run: python main.py testpush
