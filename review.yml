@@ -1,0 +1,38 @@
+# 每天早上 9 点（北京时间）复盘  =  UTC 01:00
+name: daily-review
+
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trading-bot
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+      - name: 每日复盘
+        env:
+          PYTHONUTF8: "1"
+          PUSH_CHANNEL: serverchan
+          PUSH_WEBHOOK_URL: ${{ secrets.PUSH_WEBHOOK_URL }}
+        run: python main.py review
+      - name: 保存运行状态
+        run: |
+          git config user.name "trading-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "chore: 每日复盘 $(date -u +%FT%TZ)"
+          git push

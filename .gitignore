@@ -1,0 +1,5 @@
+# 不提交缓存和临时文件
+__pycache__/
+*.pyc
+data/
+output/*.csv
