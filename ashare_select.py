@@ -118,30 +118,29 @@ def fetch_gainers(min_pct: float = PCT_MIN, max_pages: int = 40) -> list[dict]:
     return []
 
 
-def count_limit_down(max_pages: int = 40) -> int:
-    """按涨幅升序分页，统计跌停家数（升到 -9.5% 以上就停）。多镜像兜底。"""
+def count_limit_down() -> int | None:
+    """
+    统计跌停家数。只取「涨幅升序第 1 页」（最多 100 只最惨的），足够判断「跌停>=30」。
+    失败或排序异常返回 None（未知），绝不用 0 冒充。
+    """
     for host in CLIST_HOSTS:
+        raw = _get(_page_url(host, 1, 0))
+        if raw is None:
+            continue
+        page = _parse_page(raw)
+        if not page:
+            continue
+        if page[0]["pct"] > 0:        # 升序页却以涨开头 => 排序异常
+            return None
         n = 0
-        got = False
-        for pn in range(1, max_pages + 1):
-            raw = _get(_page_url(host, pn, 0))
-            if raw is None:
-                break
-            page = _parse_page(raw)
-            if not page:
-                break
-            got = True
-            for q in page:
-                if q["code"].startswith(("300", "301", "688")):
-                    if q["pct"] <= -19.0:
-                        n += 1
-                elif q["pct"] <= -9.5:
+        for q in page:
+            if q["code"].startswith(("300", "301", "688")):
+                if q["pct"] <= -19.0:
                     n += 1
-            if page[-1]["pct"] > -9.5:
-                break
-        if got:
-            return n
-    return 0
+            elif q["pct"] <= -9.5:
+                n += 1
+        return n
+    return None
 
 
 def has_limit_up_20d(code: str) -> bool:
@@ -207,7 +206,7 @@ def screen() -> tuple[list[dict], dict]:
     market = {
         "index_pct": idx_pct,
         "limit_down": lim_down,
-        "empty_day": (idx_pct is not None and idx_pct < INDEX_DROP_LIMIT) or (lim_down >= LIMIT_DOWN_WARN),
+        "empty_day": (idx_pct is not None and idx_pct < INDEX_DROP_LIMIT) or (lim_down is not None and lim_down >= LIMIT_DOWN_WARN),
     }
     if market["empty_day"]:
         return [], market          # 空仓日不跑第二轮，省请求、防限流
@@ -244,20 +243,22 @@ def screen() -> tuple[list[dict], dict]:
 
 
 def format_alert(cands: list[dict], market: dict) -> str:
-    now = datetime.now().astimezone()
+    now = ashare_fetch.now_beijing()          # 用北京时间，避免云端显示成 UTC
+    ld = market["limit_down"]
+    ld_s = f"跌停 {ld} 家" if ld is not None else "跌停数未知"
     lines = [f"📈 尾盘选股 {now:%m-%d %H:%M}"]
 
     if market["empty_day"]:
         lines.append("⚠️ 大盘大跌 / 跌停过多，今日建议【空仓】，只做观察。")
         if market["index_pct"] is not None:
-            lines.append(f"上证 {market['index_pct']:+.2f}%，跌停 {market['limit_down']} 家")
+            lines.append(f"上证 {market['index_pct']:+.2f}%，{ld_s}")
         lines.append("心法：不赌涨跌，只赚纪律和先手的钱。")
         return "\n".join(lines)
 
     if not cands:
         lines.append("今日无符合 6 条件的票，空仓等明天。")
         if market["index_pct"] is not None:
-            lines.append(f"（上证 {market['index_pct']:+.2f}%，跌停 {market['limit_down']} 家）")
+            lines.append(f"（上证 {market['index_pct']:+.2f}%，{ld_s}）")
         return "\n".join(lines)
 
     lines.append(f"符合 6 条件 {len(cands)} 只（按量比排序）：")
